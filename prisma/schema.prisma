@@ -1,0 +1,323 @@
+// AGRI VAULT Database Schema (Prisma ORM - Cross Database Compatible)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  name           String
+  role           String          @default("OPERATOR") // ADMIN, INSPECTOR, OPERATOR, VIEWER
+  organizationId String?
+  organization   Organization?   @relation(fields: [organizationId], references: [id])
+  decisions      HumanDecision[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  auditLogs      AuditLog[]
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  users     User[]
+  batches   Batch[]
+  devices   Device[]
+  createdAt DateTime @default(now())
+}
+
+model Batch {
+  id                   String                 @id // e.g. ON-2026-00125
+  batchCode            String                 @default("ON-2026-00125")
+  crop                 String                 @default("ONION") // ONION, POTATO, GARLIC, TOMATO
+  variety              String                 @default("Red Globe")
+  source               String                 @default("Lasalgaon APMC Mandi")
+  origin               String                 @default("Farm Cluster 4, Lasalgaon")
+  weight               Float                  @default(500)
+  quantityKg           Float                  @default(500)
+  procurementDate      DateTime               @default(now())
+  estimatedUnitValue   Float                  @default(100) // ₹ per kg
+  totalBatchValue      Float                  @default(50000)
+  sourceLocation       String                 @default("Farm Cluster 4, Lasalgaon")
+  procurementLocation  String                 @default("Lasalgaon APMC Mandi, Nashik")
+  registrationDate     DateTime               @default(now())
+  status               String                 @default("IN_STORAGE") // REGISTERED, INSPECTED, IN_STORAGE, DISPATCHED
+  initialGrade         String?                // A, B, C, REJECT
+  currentGrade         String?                
+  initialQualityScore  Float?                 // 0 - 100
+  qualityScore         Float?                 @default(78)
+  currentRiskScore     Float?                 // 0 - 100
+  riskScore            Float?                 @default(78)
+  currentRiskLevel     String?                @default("HIGH") // LOW, MEDIUM, HIGH, CRITICAL
+  potentialValueAtRisk Float?                 // ₹
+  organizationId       String
+  organization         Organization           @relation(fields: [organizationId], references: [id])
+  
+  samples              BatchSample[]
+  inspections          Inspection[]
+  environmentalReadings EnvironmentalReading[]
+  storageReadings      StorageReading[]
+  riskAssessments      RiskAssessment[]
+  recommendations      Recommendation[]
+  interventions        Intervention[]
+  outcomes             Outcome[]
+  devices              Device[]
+  events               BatchEvent[]
+  auditLogs            AuditLog[]
+
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+}
+
+model BatchSample {
+  id              String   @id @default(uuid())
+  batchId         String
+  batch           Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sampleSize      Int      @default(100)
+  sampledTop      Boolean  @default(true)
+  sampledMiddle   Boolean  @default(true)
+  sampledLeftSide Boolean  @default(true)
+  sampledRightSide Boolean @default(true)
+  sampledLower    Boolean  @default(true)
+  samplingNotes   String?
+  timestamp       DateTime @default(now())
+}
+
+model Inspection {
+  id                String            @id @default(uuid())
+  batchId           String
+  batch             Batch             @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  imageUrl          String?           @default("/demo-onion-sample.jpg")
+  inspectionType    String            @default("INITIAL") // INITIAL, RESCAN, PERIODIC
+  status            String            @default("READY") // READY, PROCESSING, COMPLETED, VERIFIED
+  totalDetected     Int               @default(0)
+  acceptableCount   Int               @default(0)
+  lowerGradeCount   Int               @default(0)
+  rejectCount       Int               @default(0)
+  qualityScore      Float             @default(0) // 0-100
+  grade             String            @default("B") // A, B, C, REJECT
+  rescanDeltaCount  Int?              // rejected removed count on rescan
+  inspectorName     String            @default("AI Camera System")
+  aiMode            String            @default("DEMO_AI_MODE") // DEMO_AI_MODE, REAL_YOLO
+  createdAt         DateTime          @default(now())
+  timestamp         DateTime          @default(now())
+
+  images            InspectionImage[]
+  detections        OnionDetection[]
+}
+
+model InspectionImage {
+  id           String     @id @default(uuid())
+  inspectionId String
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  imageUrl     String     // data URI or relative URL
+  imageType    String     @default("PRIMARY") // PRIMARY, RESCAN
+  timestamp    DateTime   @default(now())
+}
+
+model OnionDetection {
+  id             String     @id @default(uuid())
+  inspectionId   String
+  inspection     Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  onionIndex     Int
+  detectionIndex Int?
+  class          String     @default("ACCEPTABLE") // ACCEPTABLE, LOWER_GRADE, REJECT
+  defect         String     @default("NONE") // BRUISING, DISCOLORATION, VISIBLE_ROT, SPROUTING, SURFACE_DAMAGE
+  confidence     Float      // 0 to 1
+  boundingBox    String?    // JSON string format [x, y, w, h]
+  bboxX          Float      // 0 to 100 percentage
+  bboxY          Float
+  bboxWidth      Float
+  bboxHeight     Float
+  size           String     @default("Medium (55-65mm)")
+  color          String     @default("Red/Purple Scale")
+  category       String     // ACCEPTABLE, LOWER_GRADE, REJECT
+  defectType     String     @default("NONE")
+  severity       String     @default("NONE")
+  status         String     @default("DETECTED") // DETECTED, REMOVED, VERIFIED
+  removed        Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+}
+
+model StorageLocation {
+  id                   String                 @id @default(uuid())
+  name                 String
+  warehouseName        String
+  targetTemperature    Float                  @default(22.0)
+  targetHumidity       Float                  @default(65.0)
+  readings             EnvironmentalReading[]
+  devices              Device[]
+  createdAt            DateTime               @default(now())
+}
+
+model EnvironmentalReading {
+  id                String          @id @default(uuid())
+  batchId           String
+  batch             Batch           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  storageLocationId String?
+  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id])
+  temperature       Float
+  humidity          Float
+  source            String          @default("SIMULATION") // ESP32_TELEMETRY, MANUAL_ENTRY, SIMULATION
+  deviceId          String?
+  timestamp         DateTime        @default(now())
+}
+
+model StorageReading {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  temperature Float
+  humidity    Float
+  source      String   @default("SIMULATION") // ESP32_TELEMETRY, MANUAL_ENTRY, SIMULATION
+  timestamp   DateTime @default(now())
+}
+
+model RiskAssessment {
+  id                   String    @id @default(uuid())
+  batchId              String
+  batch                Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  riskScore            Float     // 0 - 100
+  riskLevel            String    // LOW, MEDIUM, HIGH, CRITICAL
+  contributingFactors  String    @default("{}") // JSON string of factors
+  explanation          String
+  humidityFactor       Float     @default(0)
+  temperatureFactor    Float     @default(0)
+  deteriorationFactor  Float     @default(0)
+  durationFactor       Float     @default(0)
+  initialQualityFactor Float     @default(0)
+  potentialValueAtRisk Float
+  createdAt            DateTime  @default(now())
+  timestamp            DateTime  @default(now())
+}
+
+model Recommendation {
+  id             String          @id @default(uuid())
+  batchId        String
+  batch          Batch           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  action         String          // CONTINUE_STORAGE, INSPECT, MOVE, PRIORITIZE_DISPATCH
+  reason         String          @default("Visible rot trend detected in elevated ambient humidity.")
+  title          String
+  rationale      String
+  riskScore      Float           @default(78)
+  status         String          @default("PENDING") // PENDING, APPROVED, OVERRIDDEN
+  overrideReason String?
+  decidedBy      String?
+  decidedAt      DateTime?
+  generatedAt    DateTime        @default(now())
+  timestamp      DateTime        @default(now())
+  decisions      HumanDecision[]
+}
+
+model HumanDecision {
+  id               String         @id @default(uuid())
+  recommendationId String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  decision         String         // APPROVE, OVERRIDE
+  overrideReason   String?
+  userId           String?
+  user             User?          @relation(fields: [userId], references: [id])
+  timestamp        DateTime       @default(now())
+}
+
+model BatchEvent {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  eventType   String   // PROCUREMENT, INITIAL_INSPECTION, STORAGE_ENTRY, ENVIRONMENTAL_SPIKE, RESCAN_VERIFICATION, RISK_CHANGE, RECOMMENDATION, HUMAN_DECISION, OUTCOME
+  title       String
+  description String
+  metadata    String?  // JSON string
+  timestamp   DateTime @default(now())
+}
+
+model Intervention {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  actionTaken String
+  performedBy String
+  notes       String?
+  timestamp   DateTime @default(now())
+}
+
+model Outcome {
+  id                  String   @id @default(uuid())
+  batchId             String   @unique
+  batch               Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  actualDefectRate    Float
+  finalQualityScore   Float
+  quantityLostKg      Float
+  finalRealizedValue  Float
+  aiAccuracyRating    Float    // percentage matching prediction
+  notes               String?
+  recordedAt          DateTime @default(now())
+}
+
+model Device {
+  id                String             @id // e.g. ESP32-WH-01
+  name              String
+  apiKey            String             @unique
+  deviceType        String             @default("ESP32_ENVIRONMENTAL_NODE")
+  storageLocationId String?
+  storageLocation   StorageLocation?   @relation(fields: [storageLocationId], references: [id])
+  assignedBatchId   String?
+  assignedBatch     Batch?            @relation(fields: [assignedBatchId], references: [id])
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+  status            String             @default("ONLINE") // ONLINE, OFFLINE
+  lastSeen          DateTime           @default(now())
+  telemetry         DeviceTelemetry[]
+  telemetryReadings TelemetryReading[]
+  createdAt         DateTime           @default(now())
+}
+
+model DeviceTelemetry {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  batchId     String?
+  temperature Float
+  humidity    Float
+  timestamp   DateTime @default(now())
+}
+
+model TelemetryReading {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  batchId     String?
+  temperature Float
+  humidity    Float
+  timestamp   DateTime @default(now())
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String?
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id])
+  batchId        String?
+  batch          Batch?       @relation(fields: [batchId], references: [id])
+  userEmail      String?      @default("operator@agrivault.ai")
+  entity         String       @default("BATCH")
+  entityId       String?
+  action         String
+  details        String
+  metadata       String?
+  timestamp      DateTime     @default(now())
+}
+
+model GradingConfiguration {
+  id                String   @id @default(uuid())
+  gradeAThreshold   Float    @default(90.0) // >= 90
+  gradeBThreshold   Float    @default(75.0) // >= 75
+  gradeCThreshold   Float    @default(60.0) // >= 60
+  updatedAt         DateTime @updatedAt
+}
